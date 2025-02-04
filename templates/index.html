@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FLR Tool (Extract First and Last Frame, and Reverse Video)</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Custom styles -->
+  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="bg-dark text-light">
+  <div class="container py-4">
+    <h1 class="text-center mb-4">FLR Tool (Extract First and Last Frame, and Reverse Video)</h1>
+    <form id="upload-form" enctype="multipart/form-data" class="mb-4">
+      <div class="mb-3">
+        <label for="video_file" class="form-label">Select Video File:</label>
+        <input type="file" class="form-control" name="video_file" id="video_file" accept="video/*" required>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="extract_first" name="extract_first" checked>
+        <label class="form-check-label" for="extract_first">Extract First Frame</label>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="extract_last" name="extract_last" checked>
+        <label class="form-check-label" for="extract_last">Extract Last Frame</label>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="reverse_video" name="reverse_video" checked>
+        <label class="form-check-label" for="reverse_video">Reverse Video</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Upload & Preview</button>
+    </form>
+    <!-- Preview Section -->
+    <div id="preview-section" class="mb-4" style="display: none;">
+      <h3>Preview</h3>
+      <img id="preview-image" src="" alt="Preview Image" class="img-fluid mb-3">
+      <button id="process-full" class="btn btn-success">Process Full Video</button>
+    </div>
+    <!-- Progress Indicator -->
+    <div id="progress-indicator" style="display: none;">
+      <h3>Processing...</h3>
+      <div class="progress">
+        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+      </div>
+    </div>
+    <!-- Results Section -->
+    <div id="results" class="mt-4" style="display: none;">
+      <h3>Results</h3>
+      <div class="row" id="result-links"></div>
+    </div>
+  </div>
+  <script>
+    $(document).ready(function(){
+      var uploadData = {};
+      $('#upload-form').on('submit', function(e){
+        e.preventDefault();
+        var formData = new FormData(this);
+        // Append options as lowercase strings
+        formData.append('extract_first', $('#extract_first').is(':checked') ? "true" : "false");
+        formData.append('extract_last', $('#extract_last').is(':checked') ? "true" : "false");
+        formData.append('reverse_video', $('#reverse_video').is(':checked') ? "true" : "false");
+        $.ajax({
+          url: '/upload_preview',
+          type: 'POST',
+          data: formData,
+          contentType: false,
+          processData: false,
+          success: function(response){
+            if(response.status === 'success'){
+              $('#preview-image').attr('src', response.preview_url);
+              $('#preview-section').show();
+              // Save data for full processing
+              uploadData.input_file = response.input_file;
+              uploadData.output_prefix = response.output_prefix;
+              uploadData.extract_first = $('#extract_first').is(':checked');
+              uploadData.extract_last = $('#extract_last').is(':checked');
+              uploadData.reverse_video = $('#reverse_video').is(':checked');
+            } else {
+              alert(response.message);
+            }
+          },
+          error: function(){
+            alert("Error uploading file.");
+          }
+        });
+      });
+      $('#process-full').on('click', function(){
+        $('#preview-section').hide();
+        $('#progress-indicator').show();
+        $.ajax({
+          url: '/process_video_async',
+          type: 'POST',
+          data: JSON.stringify(uploadData),
+          contentType: 'application/json',
+          success: function(response){
+            var task_id = response.task_id;
+            pollProgress(task_id);
+          },
+          error: function(){
+            alert("Error processing video.");
+            $('#progress-indicator').hide();
+          }
+        });
+      });
+      function pollProgress(task_id){
+        var interval = setInterval(function(){
+          $.ajax({
+            url: '/progress/' + task_id,
+            type: 'GET',
+            success: function(response){
+              if(response.status === 'completed'){
+                clearInterval(interval);
+                $('#progress-indicator').hide();
+                var resultsHtml = '';
+                // First Frame Card
+                if(response.result.first_frame){
+                  resultsHtml += `
+                  <div class="col-md-4">
+                    <div class="card mb-3">
+                      <img src="/download/${response.result.first_frame}" class="card-img-top" alt="First Frame">
+                      <div class="card-body">
+                        <h5 class="card-title">First Frame</h5>
+                        <a href="/download/${response.result.first_frame}" class="btn btn-primary" target="_blank">Download</a>
+                      </div>
+                    </div>
+                  </div>`;
+                }
+                // Last Frame Card
+                if(response.result.last_frame){
+                  resultsHtml += `
+                  <div class="col-md-4">
+                    <div class="card mb-3">
+                      <img src="/download/${response.result.last_frame}" class="card-img-top" alt="Last Frame">
+                      <div class="card-body">
+                        <h5 class="card-title">Last Frame</h5>
+                        <a href="/download/${response.result.last_frame}" class="btn btn-primary" target="_blank">Download</a>
+                      </div>
+                    </div>
+                  </div>`;
+                }
+                // Reversed Video Card
+                if(response.result.reversed_video){
+                  resultsHtml += `
+                  <div class="col-md-4">
+                    <div class="card mb-3">
+                      <video src="/download/${response.result.reversed_video}" controls class="card-img-top"></video>
+                      <div class="card-body">
+                        <h5 class="card-title">Reversed Video</h5>
+                        <a href="/download/${response.result.reversed_video}" class="btn btn-primary" target="_blank">Download</a>
+                      </div>
+                    </div>
+                  </div>`;
+                }
+                $('#result-links').html(resultsHtml);
+                $('#results').show();
+              } else if(response.status === 'error'){
+                clearInterval(interval);
+                $('#progress-indicator').hide();
+                alert("Error: " + response.result);
+              }
+            },
+            error: function(){
+              clearInterval(interval);
+              $('#progress-indicator').hide();
+              alert("Error fetching progress.");
+            }
+          });
+        }, 1000);
+      }
+    });
+  </script>
+</body>
+</html>
