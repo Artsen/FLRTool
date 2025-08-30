@@ -18,7 +18,7 @@ FLR Tool is a lightweight Flask-based web application that lets you upload a vid
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/Artsen/FLRTool.git
-   cd FLR Tool
+   cd FLRTool
    ```
 2. **Install the requirements:**
 
